@@ -4,22 +4,22 @@ import machine
 from machine import Pin
 import ubinascii
 from umqtt.robust import MQTTClient
-import adafruit_dht
+import dht
 import sys
 
 #network configs
-ssid = "ADD NAME OF NETWORK HERE 2.4GHz ONLY"
-password = "ADD PASSWORD HERE"
+ssid = "SSID"
+password = "Password"
 
-#sensor configs
+#sensor configs use whatever pin you have sensor connected to.
 sensor = dht.DHT11(Pin(4))
 
 
 #MQTT configs
 mqtt_broker="broker.hivemq.com"
 client_id = b"esp32_" + ubinascii.hexlify(machine.unique_id())
-temp_topic = b"esp32/temperature"
-humid_topic = b"esp32/humidity" 
+temp_topic = b"wyohack/Dylan_McCollum/sensor/temperature"
+humid_topic = b"wyohack/Dylan_McCollum/sensor/humidity"
 
 #prints will be changed to light indicators but is used as print for testing
 #WiFi connection function
@@ -41,30 +41,31 @@ def connect_wifi(sta_if, ssid, password):
         print("WiFi Connection Failed!")
         return False
 
-def sens_data(data):
-    sensor.measure()
-    temp = sensor.temperature()
-    humid = sensor.humidity()
-    mqtt_client.publish(temp_topic,
-                   bytes(str(temp), 'utf-8'),
-                   qos-0)
-    mqtt_client.publish(humid_topic,
-                   bytes(str(humid), 'utf-8'),
-                   qos=0)
+
 #MQTT function
 wlan = network.WLAN(network.STA_IF)
 if connect_wifi(wlan, ssid, password):
     mqtt_client = None
     try:
-        mqtt_client = MQTTClient(client_id, mqtt_broker)
+        mqtt_client = MQTTClient(client_id, mqtt_broker, keepalive=60)
         mqtt_client.connect()
+        print("Connected to MQTT Client")
         while True:
-            timer = Timer(0)
-            timer.init(period=5000, mode=Timer.PERIODIC, callback = sens_data)
+            time.sleep(5)
+            sensor.measure()
+            temp = sensor.temperature()
+            hum = sensor.humidity()
+            temp_f = temp * (9/5) +32.0
+            mqtt_client.publish(temp_topic, str(temp_f))
+            mqtt_client.publish(humid_topic, str(hum))
+            print(f"Published Temperature: {temp_f}°F, Humidity: {hum}%")
     except OSError as e:
+        print(f"MQTT/Network Error: {e}")
+        print("Resetting device in 5 seconds...")
         time.sleep(5)
         machine.reset()
+    except Exception as e:
+        print(f"MQTT Connection Failed: {e}")
 else:
-    time.sleep(5)
-    sys.exit()
-    
+    print("Cannot start MQTT client without WiFi connection.")
+print("End of script.")
