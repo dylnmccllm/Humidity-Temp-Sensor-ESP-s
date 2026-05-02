@@ -6,12 +6,18 @@ from machine import Pin, SoftI2C
 import ubinascii
 from umqtt.robust import MQTTClient
 import sys
+import umail
 
+#enter WiFi credentials here
 ssid = "SSID"
-password = "Password"
+password = "PASS"
 
-# Warning LED pin assignment
-LED_Pin = Pin(2, Pin.OUT)
+# Email details
+sender_email = 'esp_email'
+sender_name = 'ESP32 Alert System'
+sender_app_password = 'App_password_esp32' 
+recipient_email = 'email you want alerts sent to'
+
 # ESP32 Pin assignment 
 i2c = SoftI2C(scl=Pin(5), sda=Pin(4))
 
@@ -29,6 +35,16 @@ humid_topic = b"wyohack/Dylan_McCollum/sensor/humidity"
 # global variable initialization
 humid = 0
 temp = 0
+last_temp_alert_time = 0
+last_humid_alert_time = 0
+ALERT_COOLDOWN = 600  # 10 minutes between alerts
+MQTT_CHECK_MS = 10000
+last_mqtt_check = time.ticks_ms()
+blink_state = True
+last_message_time = time.time()
+MESSAGE_TIMEOUT = 8  # 8 seconds without message triggers reconnect
+received_data_temp = False
+received_data_humid = False
 
 
 #WiFi connection function
@@ -53,12 +69,31 @@ def connect_wifi(sta_if, ssid, password):
     
 #MQTT callback to update temp and humidity values
 def mqtt_callback(topic, msg):
-    global humid, temp
+    global humid, temp, last_message_time, received_data_temp, received_data_humid
+    print("MQTT received:", topic.decode(), msg.decode())
+    last_message_time = time.time()
     if topic == temp_topic:
         temp = float(msg.decode())
+        received_data_temp = True
     elif topic == humid_topic:
         humid = float(msg.decode())
+        received_data_humid = True
 
+# reconnects MQTT client on timeout
+def reconnect_mqtt(client):
+    try:
+        client.disconnect()
+    except Exception:
+        pass
+    client = MQTTClient(client_id, mqtt_broker, keepalive=10)
+    client.set_callback(mqtt_callback)
+    client.connect()
+    client.subscribe(temp_topic)
+    client.subscribe(humid_topic)
+    print("MQTT reconnected")
+    return client
+
+# disconnects MQTT client and WiFi interface on exit
 def cleanup(mqtt_client, wlan):
     if mqtt_client is not None:
         try:
@@ -74,7 +109,6 @@ def cleanup(mqtt_client, wlan):
         wlan.active(False)
         print("WiFi interface deactivated")
 
-    LED_Pin.off()
         
 #MQTT connection and main loop
 wlan = network.WLAN(network.STA_IF)
@@ -86,26 +120,84 @@ if connect_wifi(wlan, ssid, password):
         mqtt_client.connect()
         mqtt_client.subscribe(temp_topic)
         mqtt_client.subscribe(humid_topic)
-        print("Connected to MQTT Client")
+        smtp = umail.SMTP('smtp.gmail.com', 465, ssl=True) # Gmail's SSL port
+        smtp.login(sender_email, sender_app_password)
         while True:
-            mqtt_client.check_msg()
+            try:
+                mqtt_client.check_msg()
+            except OSError as e:
+                print("MQTT connection lost, reconnecting:", e)
+                mqtt_client = reconnect_mqtt(mqtt_client)
+            
+            current_time = time.time()
+            if current_time - last_message_time > MESSAGE_TIMEOUT:
+                print("No messages received for", MESSAGE_TIMEOUT, "seconds, reconnecting MQTT")
+                mqtt_client = reconnect_mqtt(mqtt_client)
+                last_message_time = current_time
+            
+            print(f"Temp: {temp}F, Humidity: {humid}%")
             oled.fill(0)
             oled.text('Humidity: ' + str(humid) + '%', 0, 0)
             oled.text('Temp: ' + str(temp) + 'F', 0, 10)
+            oled.text('*' if blink_state else ' ', 120, 0)
             oled.show()
+            blink_state = not blink_state
+# feel free to adjust thresholds for environent
+            if received_data_temp and received_data_humid:
+                if 63 > temp:
+                    if current_time - last_temp_alert_time > ALERT_COOLDOWN:
+                        smtp.to(recipient_email)
+                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
+                        smtp.write("Subject: Temperature Alert!\n")
+                        smtp.write("Temperature is out of range: " + str(temp) + "F\n")
+                        smtp.send()
+                        print("Temperature alert email sent!")
+                        last_temp_alert_time = current_time
+                elif 83 < temp:
+                    if current_time - last_temp_alert_time > ALERT_COOLDOWN:
+                        smtp.to(recipient_email)
+                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
+                        smtp.write("Subject: Temperature Alert!\n")
+                        smtp.write("Temperature is out of range: " + str(temp) + "F\n")
+                        smtp.send()
+                        print("Temperature alert email sent!")
+                        last_temp_alert_time = current_time
+                if 40 > humid:
+                    if current_time - last_humid_alert_time > ALERT_COOLDOWN:
+                        smtp.to(recipient_email)
+                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
+                        smtp.write("Subject: Humidity Alert!\n")
+                        smtp.write("\n")
+                        smtp.write("Humidity is out of range: " + str(humid) + "%\n")
+                        smtp.send()
+                        print("Humidity alert email sent!")
+                        last_humid_alert_time = current_time
+                elif 60 < humid:
+                    if current_time - last_humid_alert_time > ALERT_COOLDOWN:
+                        smtp.to(recipient_email)
+                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
+                        smtp.write("Subject: Humidity Alert!\n")
+                        smtp.write("\n")
+                        smtp.write("Humidity is out of range: " + str(humid) + "%\n")
+                        smtp.send()
+                        print("Humidity alert email sent!")
+                        last_humid_alert_time = current_time
+            time.sleep(1)
     except OSError as e:
         print(f"MQTT/Network Error: {e}")
-        LED_Pin.on()
         print("Resetting in 5 seconds...")
         time.sleep(5)
         machine.reset()
-        LED_Pin.off()
     except Exception as e:
         print(f"MQTT Connection Failed: {e}")
-        LED_Pin.on()
         time.sleep(5)
     finally:
+        oled.fill(0)
+        oled.show()
+        smtp.quit()
         cleanup(mqtt_client, wlan)
+
+        
 else:
     print("Cannot start MQTT client without WiFi connection.")
 print("Script finished.")
