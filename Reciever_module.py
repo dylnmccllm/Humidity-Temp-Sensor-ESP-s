@@ -38,7 +38,6 @@ temp = 0
 last_temp_alert_time = 0
 last_humid_alert_time = 0
 ALERT_COOLDOWN = 600  # 10 minutes between alerts
-MQTT_CHECK_MS = 10000
 last_mqtt_check = time.ticks_ms()
 blink_state = True
 last_message_time = time.time()
@@ -147,38 +146,44 @@ if connect_wifi(wlan, ssid, password):
                 if 63 > temp:
                     if current_time - last_temp_alert_time > ALERT_COOLDOWN:
                         smtp.to(recipient_email)
-                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
-                        smtp.write("Subject: Temperature Alert!\n")
-                        smtp.write("Temperature is out of range: " + str(temp) + "F\n")
+                        smtp.write("To: " + recipient_email + "\r\n")
+                        smtp.write("From: " + sender_name + " <" + sender_email + ">\r\n")
+                        smtp.write("Subject: Temperature Alert!\r\n")
+                        smtp.write("\r\n")
+                        smtp.write("Temperature is out of range: " + str(temp) + "F\r\n")
                         smtp.send()
                         print("Temperature alert email sent!")
                         last_temp_alert_time = current_time
                 elif 83 < temp:
                     if current_time - last_temp_alert_time > ALERT_COOLDOWN:
                         smtp.to(recipient_email)
-                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
-                        smtp.write("Subject: Temperature Alert!\n")
-                        smtp.write("Temperature is out of range: " + str(temp) + "F\n")
+                        smtp.write("To: " + recipient_email + "\r\n")
+                        smtp.write("From: " + sender_name + " <" + sender_email + ">\r\n")
+                        smtp.write("Subject: Temperature Alert!\r\n")
+                        smtp.write("\r\n")
+                        smtp.write("Temperature is out of range: " + str(temp) + "F\r\n")
                         smtp.send()
                         print("Temperature alert email sent!")
                         last_temp_alert_time = current_time
                 if 40 > humid:
                     if current_time - last_humid_alert_time > ALERT_COOLDOWN:
                         smtp.to(recipient_email)
-                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
-                        smtp.write("Subject: Humidity Alert!\n")
-                        smtp.write("\n")
-                        smtp.write("Humidity is out of range: " + str(humid) + "%\n")
+                        smtp.write("To: " + recipient_email + "\r\n")
+                        smtp.write("From: " + sender_name + " <" + sender_email + ">\r\n")
+                        smtp.write("Subject: Humidity Alert!\r\n")
+                        smtp.write("\r\n")
+                        smtp.write("Humidity is out of range: " + str(humid) + "%\r\n")
                         smtp.send()
                         print("Humidity alert email sent!")
                         last_humid_alert_time = current_time
                 elif 60 < humid:
                     if current_time - last_humid_alert_time > ALERT_COOLDOWN:
                         smtp.to(recipient_email)
-                        smtp.write("From:" + sender_name + "<" + sender_email + ">\n")
-                        smtp.write("Subject: Humidity Alert!\n")
-                        smtp.write("\n")
-                        smtp.write("Humidity is out of range: " + str(humid) + "%\n")
+                        smtp.write("To: " + recipient_email + "\r\n")
+                        smtp.write("From: " + sender_name + " <" + sender_email + ">\r\n")
+                        smtp.write("Subject: Humidity Alert!\r\n")
+                        smtp.write("\r\n")
+                        smtp.write("Humidity is out of range: " + str(humid) + "%\r\n")
                         smtp.send()
                         print("Humidity alert email sent!")
                         last_humid_alert_time = current_time
